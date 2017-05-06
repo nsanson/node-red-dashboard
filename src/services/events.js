@@ -12,6 +12,9 @@ angular.module('ui').service('UiEvents', ['$timeout',
                     event = updateValueEventName;
                 }
                 msg.socketid = socket.id;
+                // MultiUserCode
+                msg.client = socket.id;
+                // End MultiUserCode
                 socket.emit(event, msg);
             };
 
@@ -22,6 +25,12 @@ angular.module('ui').service('UiEvents', ['$timeout',
                 }
 
                 var socketHandler = function(data) {
+                	// MultiUserCode
+                     if (data.hasOwnProperty("msg") && data.msg.hasOwnProperty("payload") && data.msg.payload.hasOwnProperty("socketid")){
+                        window.socketid = data.msg.payload.socketid;
+                        //console.log("IMPOSTATO SOCKETID" + window.socketid);                        
+                    }
+                    // End MultiUserCode
                     $timeout(function() { handler(data); }, 0);
                 };
 
@@ -39,6 +48,17 @@ angular.module('ui').service('UiEvents', ['$timeout',
             socket.on('ui-replay-done', function() {
                 $timeout(replaydone, 0);
             });
+            
+           	// MultiUserCode
+            socket.on('redirect', function(destination) {
+                window.location.href = destination;
+            });
+
+            socket.on('reload', function() {
+                window.location.reload();
+            });            
+            // End MultiUserCode
+            
 
             socket.on('connect', function() {
                 that.id = socket.id;

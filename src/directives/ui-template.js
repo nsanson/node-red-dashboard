@@ -22,7 +22,11 @@ angular.module('ui').directive('uiTemplate', ['$compile', '$rootScope', 'UiEvent
             });
 
             scope.$watch('me.item.msg', function (value) {
-                if (innerScope) { innerScope.msg = value; }
+                if (innerScope) { innerScope.msg = value; 
+                                // MultiUserCode
+                                innerScope.externalScope = scope;
+                                // End MultiUserCode
+                                }
             });
 
             scope.$on('$destroy', function() {

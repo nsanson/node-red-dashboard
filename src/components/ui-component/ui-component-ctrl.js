@@ -134,11 +134,17 @@ angular.module('ui').controller('uiComponentController', ['$scope', 'UiEvents', 
                         if (typeof me.item.ddd !== "object") {
                             var b = me.item.ddd.split(/\D+/);
                             me.item.ddd = new Date(Date.UTC(b[0], --b[1], b[2], b[3], b[4], b[5], b[6]));
+                            // MultiUserCode
+                            me.item.value = me.item.ddd;
+                            // End MultiUserCode                          
                         }
                     }
                     me.processInput = function (msg) {
                         msg.value = new Date(msg.value);
                         me.item.ddd = msg.value;
+                        // MultiUserCode
+                        me.item.value = msg.value;
+                       // End MultiUserCode                          
                     };
                     me.setDate = function () {
                         me.item.value = me.item.ddd;

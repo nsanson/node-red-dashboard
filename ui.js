@@ -15,6 +15,9 @@ module.exports = function(RED) {
         toNumber: toNumber.bind(null, false),
         toFloat: toNumber.bind(null, true),
         updateUi: updateUi,
+        //MultiUserCode
+        refreshUi: refreshUi,        
+        //End MultiUserCode
         ev: ev,
         getTheme: getTheme,
         getSizes: getSizes
@@ -41,6 +44,9 @@ var removeStateTimeout = 1000;
 var ev = new events.EventEmitter();
 ev.setMaxListeners(0);
 
+//MultiUserCode
+var sockets = {};
+//End MultiUserCode
 var settings = {};
 
 function toNumber(keepDecimals, config, input) {
@@ -110,6 +116,12 @@ function add(opt) {
     if (typeof opt.storeFrontEndInputAsState === 'undefined') {
         opt.storeFrontEndInputAsState = true;
     }
+    
+    //MultiUserCode
+   var hasBeforeEmit = opt.beforeEmit? true : false;
+   var injectProps = {};    
+    //EndMultiUserCode
+    
     opt.beforeEmit = opt.beforeEmit || beforeEmit;
     opt.beforeSend = opt.beforeSend || beforeSend;
     opt.convert = opt.convert || noConvert;
@@ -124,7 +136,41 @@ function add(opt) {
             state.disabled = !msg.enabled;
             io.emit(updateValueEventName, state);
         }
-
+      //MultiUser code 
+      //To support inject operations
+      if (msg.payload.InjectUiProps) 
+	 {
+         for (var p in msg.payload) {injectProps[p] = msg.payload[p];}
+         if (injectProps.meOnly) {
+            // we do not store input state in this case (would have to do so for all clients/sockets...)
+            opt.storeFrontEndInputAsState = false;
+         }
+         //return;
+      }
+      //To support prefilled fileds
+      if (msg.InjectUiProps) {
+         for (var p in msg) injectProps[p] = msg[p];
+         if (injectProps.meOnly) {
+            // we do not store input state in this case (would have to do so for all clients/sockets...)
+            opt.storeFrontEndInputAsState = false;
+         }
+         //return;
+      }
+	
+    if (msg.payload.InjectUiProps) {return;} 
+    if (msg.payload.meOnly) {return;}
+    if (msg.InjectUiProps) {delete msg.InjectUiProps;}
+    if (msg.meOnly) {delete msg.meOnly;}
+	     
+    if (injectProps.meOnly && injectProps.disconnect) {
+	    //console.log("disconnecting " + msg.socketid);
+	 	sockets[msg.socketid].emit('reload');
+        sockets[msg.socketid].disconnect();
+     	delete sockets[msg.socketid];
+        return;
+      }
+      //End MultiUserCode
+      
         // remove res and req as they are often circular
         if (msg.hasOwnProperty("res")) { delete msg.res; }
         if (msg.hasOwnProperty("req")) { delete msg.req; }
@@ -189,10 +235,22 @@ function add(opt) {
             toEmit.id = toStore.id = opt.node.id;
             //console.log("EMIT",toEmit);
 
+			//MultiUserCode:
+			
             // Emit and Store the data
-            io.emit(updateValueEventName, toEmit);
-            replayMessages[opt.node.id] = toStore;
-
+            //io.emit(updateValueEventName, toEmit);
+            //replayMessages[opt.node.id] = toStore;
+			
+			if (injectProps.meOnly && msg.hasOwnProperty("socketid")){
+    	        // Emit and Store the data
+    		    sockets[msg.socketid].emit(updateValueEventName, toEmit);
+    	    }
+    	    else {
+                io.emit(updateValueEventName, toEmit);
+                replayMessages[opt.node.id] = toStore;
+            }
+			//End MultiUserCode
+			
             // Handle the node output
             if (opt.forwardInputMessages && opt.node._wireCount) {
                 msg.payload = opt.convertBack(fullDataset);
@@ -201,6 +259,19 @@ function add(opt) {
             }
         }
     });
+    
+   //MultiUserCode:
+   function updateClient(msg) {      
+      if (msg.hasOwnProperty("socketid") && sockets[msg.socketid]) {
+         var toEmit = opt.beforeEmit(msg, msg.payload);
+         toEmit.id = opt.node.id;
+         sockets[msg.socketid].emit(updateValueEventName, toEmit);
+      } else {
+
+         console.error("node: " + opt.node.id + " is taged 'onlyMe' but message has no client id - cannot determine target client");
+      }
+   }
+   //End MultiUserCode    
 
     var handler = function (msg) {
         if (msg.id !== opt.node.id) { return; }
@@ -215,7 +286,17 @@ function add(opt) {
         opt.node.send(toSend);
 
         if (opt.storeFrontEndInputAsState) {
-            //fwd to all UI clients
+            //MultiUserCode:    
+            if (injectProps.meOnly) {
+              // handler is invoked when client changes any value in this node
+              // we return immediately unless hasBeforeEmit would cause a value transformation (otherwise leave as is)
+               if (hasBeforeEmit) {
+                 updateClient(msg);
+               }
+               return;
+            }
+            //End MultiUserCode        
+            //fwd to all UI clients            
             io.emit(updateValueEventName, msg);
         }
     };
@@ -277,6 +358,9 @@ function init(server, app, log, redSettings) {
     log.info("Dashboard version " + dashboardVersion + " started at " + fullPath);
 
     io.on('connection', function(socket) {
+    	// MultiUserCode:
+        sockets[socket.client.id] = socket;
+        // End MultiUserCode
         ev.emit("newsocket", socket.client.id, socket.request.connection.remoteAddress);
         updateUi(socket);
 
@@ -323,6 +407,30 @@ function updateUi(to) {
         updateUiPending = false;
     });
 }
+
+//MultiUserCode:
+function refreshUi(to) {
+    if (!to) {
+        to = io;
+    }
+    updateUiPending = true;
+    process.nextTick(function() {
+        tabs.forEach(function(t) {
+            t.theme = baseConfiguration.theme;
+        });
+        links.forEach(function(l) {
+            l.theme = baseConfiguration.theme;
+        });
+        to.emit('ui-refresh', {
+            site: baseConfiguration.site,
+            theme: baseConfiguration.theme,
+            tabs: tabs,
+            links: links
+        });
+    });
+    updateUiPending = false;
+}
+//End MultiUserCode
 
 function find(array, predicate) {
     for (var i=0; i<array.length; i++) {
